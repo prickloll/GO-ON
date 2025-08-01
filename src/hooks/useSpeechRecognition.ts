@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 interface SpeechRecognitionHook {
   isListening: boolean;
@@ -13,6 +13,7 @@ export const useSpeechRecognition = (language: string = 'en-US'): SpeechRecognit
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const finalTranscriptRef = useRef<string>('');
 
   const isSupported = 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
 
@@ -29,17 +30,27 @@ export const useSpeechRecognition = (language: string = 'en-US'): SpeechRecognit
 
     recognition.onstart = () => {
       setIsListening(true);
+      finalTranscriptRef.current = '';
     };
 
     recognition.onresult = (event) => {
+      let interimTranscript = '';
       let finalTranscript = '';
+      
       for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
         }
       }
+      
       if (finalTranscript) {
-        setTranscript(finalTranscript);
+        finalTranscriptRef.current += finalTranscript;
+        setTranscript(finalTranscriptRef.current);
+      } else if (interimTranscript) {
+        setTranscript(finalTranscriptRef.current + interimTranscript);
       }
     };
 
@@ -50,6 +61,10 @@ export const useSpeechRecognition = (language: string = 'en-US'): SpeechRecognit
 
     recognition.onend = () => {
       setIsListening(false);
+      // Ensure we have the final transcript when recognition ends
+      if (finalTranscriptRef.current) {
+        setTranscript(finalTranscriptRef.current);
+      }
     };
 
     return () => {
@@ -59,22 +74,24 @@ export const useSpeechRecognition = (language: string = 'en-US'): SpeechRecognit
     };
   }, [language, isSupported]);
 
-  const startListening = () => {
+  const startListening = useCallback(() => {
     if (recognitionRef.current && !isListening) {
+      finalTranscriptRef.current = '';
       setTranscript('');
       recognitionRef.current.start();
     }
-  };
+  }, [isListening]);
 
-  const stopListening = () => {
+  const stopListening = useCallback(() => {
     if (recognitionRef.current && isListening) {
       recognitionRef.current.stop();
     }
-  };
+  }, [isListening]);
 
-  const resetTranscript = () => {
+  const resetTranscript = useCallback(() => {
     setTranscript('');
-  };
+    finalTranscriptRef.current = '';
+  }, []);
 
   return {
     isListening,

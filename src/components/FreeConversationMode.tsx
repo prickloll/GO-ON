@@ -1,14 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Send, Volume2, RotateCcw, MessageCircle, Lightbulb, Globe } from 'lucide-react';
+import { ArrowLeft, Send, Volume2, MessageCircle, Lightbulb, Globe, Mic, X } from 'lucide-react';
 import { Language } from '../types';
 import { languages } from '../data/languages';
 import { TextHighlighter } from './TextHighlighter';
-import { VoiceControls } from './VoiceControls';
-import { Avatar } from './Avatar';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
 import { getLanguageCode } from '../utils/languageMapping';
-import { aiService } from '../services/aiService';
 
 interface FreeConversationModeProps {
   language: Language;
@@ -27,17 +24,13 @@ export const FreeConversationMode: React.FC<FreeConversationModeProps> = ({ lang
   const [selectedLanguage, setSelectedLanguage] = useState<Language>(initialLanguage);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
   const [showTranslations, setShowTranslations] = useState(false);
-  const [voiceInputEnabled, setVoiceInputEnabled] = useState(false);
-  const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(false);
+  const [shouldAutoSend, setShouldAutoSend] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const speechLang = getLanguageCode(selectedLanguage.code);
   const speechRecognition = useSpeechRecognition(speechLang);
   const speechSynthesis = useSpeechSynthesis();
-
-  const isVoiceEnabled = voiceInputEnabled || voiceOutputEnabled;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -48,66 +41,45 @@ export const FreeConversationMode: React.FC<FreeConversationModeProps> = ({ lang
   }, [messages]);
 
   useEffect(() => {
-    // Start with an AI greeting when language changes
-    initializeConversation();
+    // Initialize with welcome message when language changes
+    setMessages([]);
+    addMessage(
+      getWelcomeMessage(),
+      false,
+      "Welcome! This free conversation mode is ready for external API integration. You can practice typing and using voice features."
+    );
   }, [selectedLanguage]);
 
   // Handle speech recognition transcript
   useEffect(() => {
-    if (speechRecognition.transcript && voiceInputEnabled) {
+    if (speechRecognition.transcript) {
       setInputText(speechRecognition.transcript);
     }
-  }, [speechRecognition.transcript, voiceInputEnabled]);
+  }, [speechRecognition.transcript]);
 
-  const initializeConversation = async () => {
-    setMessages([]);
-    
-    try {
-      const greeting = await aiService.generateResponse(
-        `Start a friendly conversation in ${selectedLanguage.name}. Introduce yourself as a conversation partner and ask what the user would like to talk about.`,
-        selectedLanguage.name
-      );
-      
-      addMessage(greeting.message, false, greeting.translation);
-    } catch (error) {
-      // Fallback greeting
-      const fallbackGreeting = getFallbackGreeting();
-      addMessage(fallbackGreeting.text, false, fallbackGreeting.translation);
+  // Handle auto-send when recording stops
+  useEffect(() => {
+    if (shouldAutoSend && !speechRecognition.isListening && inputText.trim()) {
+      setShouldAutoSend(false);
+      handleSendMessage();
     }
-  };
+  }, [speechRecognition.isListening, shouldAutoSend, inputText]);
 
-  const getFallbackGreeting = () => {
-    const greetings: Record<string, { text: string; translation: string }> = {
-      es: { 
-        text: "¡Hola! Soy tu compañero de conversación en español. ¿De qué te gustaría hablar hoy?", 
-        translation: "Hello! I'm your Spanish conversation partner. What would you like to talk about today?" 
-      },
-      fr: { 
-        text: "Bonjour ! Je suis votre partenaire de conversation en français. De quoi aimeriez-vous parler aujourd'hui ?", 
-        translation: "Hello! I'm your French conversation partner. What would you like to talk about today?" 
-      },
-      de: { 
-        text: "Hallo! Ich bin Ihr Gesprächspartner auf Deutsch. Worüber möchten Sie heute sprechen?", 
-        translation: "Hello! I'm your German conversation partner. What would you like to talk about today?" 
-      },
-      it: { 
-        text: "Ciao! Sono il tuo partner di conversazione in italiano. Di cosa vorresti parlare oggi?", 
-        translation: "Hello! I'm your Italian conversation partner. What would you like to talk about today?" 
-      },
-      pt: { 
-        text: "Olá! Sou seu parceiro de conversa em português. Sobre o que gostaria de falar hoje?", 
-        translation: "Hello! I'm your Portuguese conversation partner. What would you like to talk about today?" 
-      },
-      ja: { 
-        text: "こんにちは！日本語の会話パートナーです。今日は何についてお話ししたいですか？", 
-        translation: "Hello! I'm your Japanese conversation partner. What would you like to talk about today?" 
-      }
+  const getWelcomeMessage = () => {
+    const welcomeMessages: Record<string, string> = {
+      es: "¡Hola! Soy tu compañero de conversación. Este modo está listo para integración con API externa.",
+      fr: "Bonjour ! Je suis votre partenaire de conversation. Ce mode est prêt pour l'intégration d'API externe.",
+      de: "Hallo! Ich bin Ihr Gesprächspartner. Dieser Modus ist bereit für externe API-Integration.",
+      it: "Ciao! Sono il tuo partner di conversazione. Questa modalità è pronta per l'integrazione API esterna.",
+      pt: "Olá! Sou seu parceiro de conversa. Este modo está pronto para integração de API externa.",
+      ja: "こんにちは！会話パートナーです。このモードは外部API統合の準備ができています。",
+      ko: "안녕하세요! 대화 파트너입니다. 이 모드는 외부 API 통합을 위해 준비되었습니다.",
+      zh: "你好！我是你的对话伙伴。此模式已准备好进行外部API集成。",
+      ru: "Привет! Я ваш собеседник. Этот режим готов для интеграции внешнего API.",
+      ar: "مرحباً! أنا شريك المحادثة الخاص بك. هذا الوضع جاهز لتكامل API الخارجي."
     };
     
-    return greetings[selectedLanguage.code] || { 
-      text: "Hello! I'm your conversation partner. What would you like to talk about today?", 
-      translation: "Hello! I'm your conversation partner. What would you like to talk about today?" 
-    };
+    return welcomeMessages[selectedLanguage.code] || "Hello! I'm your conversation partner. This mode is ready for external API integration.";
   };
 
   const addMessage = (text: string, isUser: boolean, translation?: string) => {
@@ -119,13 +91,6 @@ export const FreeConversationMode: React.FC<FreeConversationModeProps> = ({ lang
       translation
     };
     setMessages(prev => [...prev, newMessage]);
-
-    // Speak AI messages if voice output is enabled
-    if (!isUser && voiceOutputEnabled && speechSynthesis.isSupported) {
-      setTimeout(() => {
-        speechSynthesis.speak(text, speechLang);
-      }, 500);
-    }
   };
 
   const handleSendMessage = async () => {
@@ -135,26 +100,12 @@ export const FreeConversationMode: React.FC<FreeConversationModeProps> = ({ lang
     addMessage(userMessage, true);
     setInputText('');
     speechRecognition.resetTranscript();
-    setIsTyping(true);
 
-    try {
-      const aiResponse = await aiService.generateResponse(
-        userMessage,
-        selectedLanguage.name
-      );
-      
-      addMessage(aiResponse.message, false, aiResponse.translation);
-    } catch (error) {
-      console.error('Failed to get AI response:', error);
-      // Show error message
-      addMessage(
-        "I'm sorry, I'm having trouble responding right now. Please try again.",
-        false,
-        "I'm sorry, I'm having trouble responding right now. Please try again."
-      );
-    } finally {
-      setIsTyping(false);
-    }
+    // Simulate a response - replace this with your API integration
+    setTimeout(() => {
+      const echoResponse = `Echo in ${selectedLanguage.name}: ${userMessage}`;
+      addMessage(echoResponse, false, `This is an echo response in ${selectedLanguage.name}. Replace with your API integration.`);
+    }, 1000);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -164,9 +115,16 @@ export const FreeConversationMode: React.FC<FreeConversationModeProps> = ({ lang
     }
   };
 
-  const resetConversation = () => {
-    aiService.clearConversation(selectedLanguage.name);
-    initializeConversation();
+  const handleMicClick = () => {
+    if (speechRecognition.isListening) {
+      // Stop recording and auto-send
+      setShouldAutoSend(true);
+      speechRecognition.stopListening();
+    } else {
+      // Start recording immediately
+      setShouldAutoSend(false);
+      speechRecognition.startListening();
+    }
   };
 
   return (
@@ -184,7 +142,13 @@ export const FreeConversationMode: React.FC<FreeConversationModeProps> = ({ lang
             </button>
             <div>
               <h1 className="text-xl font-medium text-gray-900">Free Conversation</h1>
-              <p className="text-sm text-gray-500">{selectedLanguage.flag} {selectedLanguage.name} Practice</p>
+              <div className="flex items-center space-x-3">
+                <p className="text-sm text-gray-500">{selectedLanguage.flag} {selectedLanguage.name} Practice</p>
+                <div className="flex items-center text-xs text-blue-500">
+                  <div className="w-2 h-2 rounded-full mr-1 bg-blue-500"></div>
+                  Ready for API Integration
+                </div>
+              </div>
             </div>
           </div>
           
@@ -206,54 +170,21 @@ export const FreeConversationMode: React.FC<FreeConversationModeProps> = ({ lang
               </select>
               <Globe className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
             </div>
-
-            <VoiceControls
-              isListening={speechRecognition.isListening}
-              isSpeaking={speechSynthesis.isSpeaking}
-              voiceInputEnabled={voiceInputEnabled}
-              voiceOutputEnabled={voiceOutputEnabled}
-              onToggleVoiceInput={() => setVoiceInputEnabled(!voiceInputEnabled)}
-              onToggleVoiceOutput={() => setVoiceOutputEnabled(!voiceOutputEnabled)}
-              onStartListening={speechRecognition.startListening}
-              onStopListening={speechRecognition.stopListening}
-              onStopSpeaking={speechSynthesis.stop}
-              isSupported={speechRecognition.isSupported && speechSynthesis.isSupported}
-            />
             
             <button
               onClick={() => setShowTranslations(!showTranslations)}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+              className={`flex items-center px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
                 showTranslations 
                   ? 'bg-black text-white' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              <Lightbulb className="w-4 h-4 mr-1" />
-              {showTranslations ? 'Hide' : 'Show'} Translations
-            </button>
-            <button
-              onClick={resetConversation}
-              className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"
-            >
-              <RotateCcw className="w-4 h-4 text-gray-600" />
+              <Lightbulb className="w-4 h-4 mr-1 flex-shrink-0" />
+              <span>{showTranslations ? 'Hide' : 'Show'} Translations</span>
             </button>
           </div>
         </div>
       </div>
-
-      {/* Avatar Section - Only shows when voice is enabled */}
-      {isVoiceEnabled && (
-        <div className="bg-white border-b border-gray-100 py-6">
-          <div className="max-w-4xl mx-auto px-6">
-            <Avatar
-              isListening={speechRecognition.isListening}
-              isSpeaking={speechSynthesis.isSpeaking}
-              voiceEnabled={isVoiceEnabled}
-              className="mb-4"
-            />
-          </div>
-        </div>
-      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto">
@@ -283,7 +214,7 @@ export const FreeConversationMode: React.FC<FreeConversationModeProps> = ({ lang
                       />
                       {showTranslations && message.translation && (
                         <div className="mt-3 pt-3 border-t border-gray-100">
-                          <p className="text-sm text-gray-600 italic">
+                          <p className="text-sm italic text-gray-600">
                             {message.translation}
                           </p>
                         </div>
@@ -291,7 +222,9 @@ export const FreeConversationMode: React.FC<FreeConversationModeProps> = ({ lang
                     </>
                   )}
                   <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
-                    <span className={`text-xs ${message.isUser ? 'text-gray-300' : 'text-gray-400'}`}>
+                    <span className={`text-xs ${
+                      message.isUser ? 'text-gray-300' : 'text-gray-400'
+                    }`}>
                       {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                     {!message.isUser && (
@@ -306,27 +239,12 @@ export const FreeConversationMode: React.FC<FreeConversationModeProps> = ({ lang
                 </div>
               </div>
             ))}
-
-            {isTyping && (
-              <div className="flex justify-start">
-                <div className="max-w-xs lg:max-w-md px-6 py-4 bg-white border border-gray-200 rounded-2xl">
-                  <div className="flex items-center space-x-2">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                    </div>
-                    <span className="text-xs text-gray-500">AI is thinking...</span>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
           <div ref={messagesEndRef} />
         </div>
       </div>
 
-      {/* Input */}
+      {/* Input with Voice Controls */}
       <div className="bg-white border-t border-gray-200 px-6 py-4">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-end space-x-4">
@@ -340,16 +258,40 @@ export const FreeConversationMode: React.FC<FreeConversationModeProps> = ({ lang
                 rows={1}
                 style={{ minHeight: '48px', maxHeight: '120px' }}
               />
-              {voiceInputEnabled && speechRecognition.isListening && (
+              {speechRecognition.isListening && (
                 <div className="absolute top-2 right-2 flex items-center text-red-500">
                   <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse mr-1"></div>
                   <span className="text-xs">Listening...</span>
                 </div>
               )}
             </div>
+            
+            {/* Mic Button - Immediate Start/Stop Recording */}
+            {speechRecognition.isSupported && (
+              <button
+                onClick={handleMicClick}
+                className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
+                  speechRecognition.isListening
+                    ? 'bg-red-100 text-red-600 hover:bg-red-200 animate-pulse'
+                    : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+                }`}
+                title={speechRecognition.isListening ? 'Stop recording and send' : 'Start recording'}
+              >
+                {speechRecognition.isListening ? (
+                  <div className="flex items-center">
+                    <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse mr-1"></div>
+                    <Mic className="w-5 h-5" />
+                  </div>
+                ) : (
+                  <Mic className="w-5 h-5" />
+                )}
+              </button>
+            )}
+
+            {/* Send Button */}
             <button
               onClick={handleSendMessage}
-              disabled={!inputText.trim() || isTyping}
+              disabled={!inputText.trim()}
               className="w-12 h-12 bg-black text-white rounded-full flex items-center justify-center hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Send className="w-5 h-5" />
